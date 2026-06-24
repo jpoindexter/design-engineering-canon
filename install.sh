@@ -1,44 +1,43 @@
 #!/usr/bin/env bash
-# Install the Design Engineering Canon skills globally for Claude Code.
-# Copies skills/dec-* into ~/.claude/skills and registers them always-on in ~/.claude/CLAUDE.md.
-# Idempotent. Uninstall with: ./install.sh --uninstall
+# Install the Design Engineering Canon skills for SKILL.md-aware agents.
+# Copies skills/dec-* into each agent's skills dir and registers an always-on
+# directive block in its root instruction file (where one exists).
+#
+#   ./install.sh [target ...]              install (default target: claude)
+#   ./install.sh all                       install for claude, codex, and cursor
+#   ./install.sh --uninstall [target ...]  remove skills + managed block
+#
+# Idempotent. Targets: claude | codex | cursor | all
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILLS_SRC="$REPO_DIR/skills"
-CLAUDE_DIR="${CLAUDE_HOME:-$HOME/.claude}"
-SKILLS_DST="$CLAUDE_DIR/skills"
-CLAUDE_MD="$CLAUDE_DIR/CLAUDE.md"
 BEGIN="<!-- BEGIN design-engineering-canon (managed by install.sh) -->"
 END="<!-- END design-engineering-canon -->"
 
 skills() { find "$SKILLS_SRC" -mindepth 1 -maxdepth 1 -type d -name 'dec-*' -exec basename {} \; | sort; }
 
-strip_block() {
-  # Remove the managed block from CLAUDE.md if present (portable awk, no in-place sed).
-  [ -f "$CLAUDE_MD" ] || return 0
+# target -> "skills_dir|instruction_file"   (instruction_file empty = no rules file to edit)
+target_paths() {
+  case "$1" in
+    claude) echo "$HOME/.claude/skills|$HOME/.claude/CLAUDE.md" ;;
+    codex)  echo "$HOME/.codex/skills|$HOME/.codex/AGENTS.md" ;;
+    cursor) echo "$HOME/.cursor/skills-cursor|" ;;
+    *) echo "unknown target: $1" >&2; return 1 ;;
+  esac
+}
+
+strip_block() { # $1 = instruction file
+  [ -n "$1" ] && [ -f "$1" ] || return 0
   awk -v b="$BEGIN" -v e="$END" '
-    $0==b {skip=1} skip && $0==e {skip=0; next} !skip' "$CLAUDE_MD" > "$CLAUDE_MD.tmp"
-  mv "$CLAUDE_MD.tmp" "$CLAUDE_MD"
+    $0==b {skip=1} skip && $0==e {skip=0; next} !skip' "$1" > "$1.tmp"
+  mv "$1.tmp" "$1"
 }
 
-uninstall() {
-  for s in $(skills); do rm -rf "${SKILLS_DST:?}/$s"; done
-  strip_block
-  echo "Uninstalled Design Engineering Canon (skills removed, CLAUDE.md block stripped)."
-}
-
-install() {
-  mkdir -p "$SKILLS_DST" "$CLAUDE_DIR"
-  local n=0
-  for s in $(skills); do
-    rm -rf "${SKILLS_DST:?}/$s"
-    cp -R "$SKILLS_SRC/$s" "$SKILLS_DST/$s"
-    n=$((n+1))
-  done
-
-  # Rewrite the managed always-on block (strip old, append fresh) so re-runs stay clean.
-  strip_block
+append_block() { # $1 = instruction file
+  [ -n "$1" ] || return 0
+  mkdir -p "$(dirname "$1")"; touch "$1"
+  strip_block "$1"
   {
     printf '\n%s\n' "$BEGIN"
     echo "## Design Engineering Canon — always on"
@@ -50,15 +49,38 @@ install() {
     echo
     for s in $(skills); do echo "- \`$s\`"; done
     printf '%s\n' "$END"
-  } >> "$CLAUDE_MD"
-
-  echo "Installed $n skills to $SKILLS_DST"
-  echo "Registered always-on block in $CLAUDE_MD"
-  echo "Start a new Claude Code session to pick them up."
+  } >> "$1"
 }
 
-case "${1:-}" in
-  --uninstall|-u) uninstall ;;
-  ""|--install)   install ;;
-  *) echo "usage: $0 [--install|--uninstall]" >&2; exit 2 ;;
-esac
+do_install() { # $1 = target
+  local dst instr; IFS='|' read -r dst instr <<<"$(target_paths "$1")"
+  mkdir -p "$dst"
+  local n=0
+  for s in $(skills); do rm -rf "${dst:?}/$s"; cp -R "$SKILLS_SRC/$s" "$dst/$s"; n=$((n+1)); done
+  append_block "$instr"
+  printf '[%s] installed %d skills -> %s%s\n' "$1" "$n" "$dst" \
+    "${instr:+; registered block in $instr}"
+}
+
+do_uninstall() { # $1 = target
+  local dst instr; IFS='|' read -r dst instr <<<"$(target_paths "$1")"
+  for s in $(skills); do rm -rf "${dst:?}/$s"; done
+  strip_block "$instr"
+  printf '[%s] uninstalled (skills removed%s)\n' "$1" "${instr:+; block stripped}"
+}
+
+# --- arg parsing ---
+MODE=install; TARGETS=()
+for a in "$@"; do
+  case "$a" in
+    --uninstall|-u) MODE=uninstall ;;
+    --install)      MODE=install ;;
+    all)            TARGETS=(claude codex cursor) ;;
+    claude|codex|cursor) TARGETS+=("$a") ;;
+    *) echo "usage: $0 [--uninstall] [claude|codex|cursor|all ...]" >&2; exit 2 ;;
+  esac
+done
+[ ${#TARGETS[@]} -eq 0 ] && TARGETS=(claude)
+
+for t in "${TARGETS[@]}"; do "do_$MODE" "$t"; done
+[ "$MODE" = install ] && echo "Start a new agent session to pick up the skills."
