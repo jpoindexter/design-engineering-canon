@@ -11,6 +11,9 @@ layout, color, type, motion, copy, flow, accessibility, performance, product sco
 work, or an AI/LLM-powered interface — consult and apply the relevant Design Engineering Canon
 skills **before and while** doing the work. Reason from the named principles below, don't eyeball it.
 
+Prefer routing through `dec` over hand-picking: it loads 2–4 skills per task from an
+evidence-based routing table instead of the whole canon.
+
 | Vertical | Skill | Fires when |
 | --- | --- | --- |
 | Core principles | `dec-core-principles` | deciding where complexity lives, what to reveal, where truth lives |

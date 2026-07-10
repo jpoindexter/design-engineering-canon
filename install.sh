@@ -15,7 +15,7 @@ SKILLS_SRC="$REPO_DIR/skills"
 BEGIN="<!-- BEGIN design-engineering-canon (managed by install.sh) -->"
 END="<!-- END design-engineering-canon -->"
 
-skills() { find "$SKILLS_SRC" -mindepth 1 -maxdepth 1 -type d -name 'dec-*' -exec basename {} \; | sort; }
+skills() { find "$SKILLS_SRC" -mindepth 1 -maxdepth 1 -type d \( -name 'dec-*' -o -name 'dec' \) -exec basename {} \; | sort; }
 
 # target -> "skills_dir|instruction_file"   (instruction_file empty = no rules file to edit)
 target_paths() {
